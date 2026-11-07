@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller / Build artifacts
+build/
+dist/
+*.manifest
+*.spec.bak
+
+# Setup output binaries (Large files)
+Output/*.exe
+
+# Audio temp files & recorded test outputs
+*.wav
+*.mp4
+test_out/
+
+# Local license data
+license.dat
+trial.dat
+
+# Virtual environment
+venv/
+.env
