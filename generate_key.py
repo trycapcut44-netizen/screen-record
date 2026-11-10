@@ -1,7 +1,7 @@
 """
-generate_key.py - License Key Generator for ZoomRecorder Pro
-Run this script whenever a customer pays you 1,000 PKR to generate a valid 1-Month activation key.
-You can also generate Lifetime keys.
+generate_key.py - Single-Use License Key Generator for ZoomRecorder Pro
+Run this script whenever a customer pays you 1,000 PKR.
+Each key generated can ONLY be used once.
 """
 
 import sys
@@ -9,36 +9,46 @@ from subscription_manager import SubscriptionManager
 
 
 def main():
-    print("=" * 60)
-    print("      ZoomRecorder Pro - License Key Generator")
-    print("=" * 60)
-    print("Plans Available:")
-    print("  [1] 1-Month Subscription Plan (1,000 PKR - 30 Days)")
-    print("  [2] Lifetime Pro License (Unlimited Access)")
-    print("=" * 60)
+    print("=" * 65)
+    print("      ZoomRecorder Pro - Single-Use License Key Generator")
+    print("=" * 65)
+    print("Har key sirf 1 martaba use ho sakti hai (Single-Use Only).")
+    print("Agar customer kisi aur ko bhejega to dosri device par kaam nahi karegi!")
+    print("=" * 65)
+    print("Key Type:")
+    print("  [1] Device-Bound Key (Customer ki Device ID k mutabiq - RECOMMENDED)")
+    print("  [2] Universal 1-Time Key (Kisi bhi 1 device par 1 dafa lag sakti hai)")
+    print("-" * 65)
 
-    choice = input("Select plan [1 or 2, default is 1]: ").strip()
-    plan_type = "1M" if choice != "2" else "LF"
-    plan_desc = "1-Month Pro Plan (1,000 PKR)" if plan_type == "1M" else "Lifetime Pro License"
+    mode = input("Select Option [1 or 2, default is 1]: ").strip()
+    if mode != "2":
+        dev_id = input("\nCustomer ki Device ID enter karein (e.g. ZR-24A2-BD46): ").strip().upper()
+        if not dev_id:
+            print("[Error] Device ID lazmi hai.")
+            input("\nPress Enter to exit...")
+            return
 
-    how_many_str = input("How many keys do you want to generate? [Default 1]: ").strip()
-    try:
-        count = int(how_many_str) if how_many_str else 1
-    except ValueError:
-        count = 1
+        key = SubscriptionManager.generate_device_key(dev_id, plan_type="1M")
+        print("\n" + "=" * 65)
+        print("  DEVICE-BOUND LICENSE KEY GENERATED:")
+        print("=" * 65)
+        print(f"  Target Device ID :  {dev_id}")
+        print(f"  Plan             :  1-Month Pro Plan (1,000 PKR)")
+        print(f"  Activation Key   :  {key}")
+        print("=" * 65)
+        print("Customer ko yeh key WhatsApp par send kar dein.")
+        print("Yeh key sirf isi customer ki device par chalegi aur sirf 1 bar use hogi.")
+    else:
+        key = SubscriptionManager.generate_universal_key(plan_type="1M")
+        print("\n" + "=" * 65)
+        print("  UNIVERSAL SINGLE-USE LICENSE KEY GENERATED:")
+        print("=" * 65)
+        print(f"  Plan             :  1-Month Pro Plan (1,000 PKR)")
+        print(f"  Activation Key   :  {key}")
+        print("=" * 65)
+        print("Yeh key kisi bhi 1 device par activate hogi aur us k baad burn ho jayegi.")
 
-    print("\n" + "-" * 60)
-    print(f"Generated {count} Key(s) for: {plan_desc}")
-    print("-" * 60)
-
-    for i in range(count):
-        key = SubscriptionManager.generate_license_key(plan_type)
-        print(f"  Key #{i+1}:  {key}")
-
-    print("-" * 60)
-    print("Customer ko yeh key copy kar k send kar dein.")
-    print("Customer app me ja kar yeh key enter karega to uska Pro activate ho jayega.")
-    print("=" * 60)
+    print("=" * 65)
     input("\nPress Enter to exit...")
 
 

@@ -40,10 +40,9 @@ class MouseTracker(QObject):
             return
         self._running = True
 
-        # Mouse Listener
+        # Mouse Listener (Only on_click to avoid low-level Windows hook mouse lag)
         self._mouse_listener = mouse.Listener(
-            on_click=self._on_click,
-            on_move=self._on_move
+            on_click=self._on_click
         )
         self._mouse_listener.daemon = True
         self._mouse_listener.start()

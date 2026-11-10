@@ -144,22 +144,31 @@ class TestZoomRecorder(unittest.TestCase):
         from subscription_manager import SubscriptionManager
         mgr = SubscriptionManager()
 
-        # Test key generation
-        key_1m = mgr.generate_license_key("1M")
+        # Test device-bound key generation
+        key_1m = mgr.generate_device_key(mgr.device_id, "1M")
         valid, plan, days = mgr.validate_key(key_1m)
         self.assertTrue(valid)
         self.assertEqual(days, 30)
         self.assertIn("1-Month", plan)
 
-        key_lf = mgr.generate_license_key("LF")
-        valid_lf, plan_lf, days_lf = mgr.validate_key(key_lf)
-        self.assertTrue(valid_lf)
-        self.assertEqual(days_lf, 3650)
-        self.assertIn("Lifetime", plan_lf)
+        # Test universal single-use key generation
+        key_u = mgr.generate_universal_key("1M")
+        valid_u, plan_u, days_u = mgr.validate_key(key_u)
+        self.assertTrue(valid_u)
+        self.assertEqual(days_u, 30)
 
         # Test invalid key
-        self.assertFalse(mgr.validate_key("ZR1M-INVALID-KEY-1234-5678")[0])
-        print("[TEST] Subscription keys generation & validation passed!")
+        self.assertFalse(mgr.validate_key("ZR1M-INVALID-KEY-1234-5678-0000")[0])
+
+        # Test wrong device ID key
+        key_wrong_dev = mgr.generate_device_key("ZR-FFFF-9999", "1M")
+        valid_wrong, err_wrong, _ = mgr.validate_key(key_wrong_dev)
+        self.assertFalse(valid_wrong)
+        self.assertIn("kisi aur device", err_wrong)
+
+        # Test free 1st video logic
+        self.assertTrue(isinstance(mgr.is_first_video_free(), bool))
+        print("[TEST] Single-use device-bound subscription tests passed!")
 
 
 if __name__ == "__main__":

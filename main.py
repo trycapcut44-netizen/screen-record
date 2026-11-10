@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QComboBox, QSlider, QCheckBox,
     QFileDialog, QMessageBox, QFrame, QSystemTrayIcon, QMenu, QAction,
-    QGraphicsDropShadowEffect, QSizePolicy
+    QGraphicsDropShadowEffect, QSizePolicy, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSlot, QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPainter
@@ -35,7 +35,7 @@ from utils import (
 )
 from mouse_tracker import MouseTracker
 from recorder import ScreenRecorder
-from subscription_manager import subscription_mgr, FREE_TRIAL_SECONDS
+from subscription_manager import subscription_mgr
 from subscription_dialog import SubscriptionDialog
 
 
@@ -617,11 +617,12 @@ class ZoomRecorderApp(QMainWindow):
         if reason == QSystemTrayIcon.DoubleClick:
             self._show_window()
 
-    def _open_subscription_dialog(self, is_expired: bool = False):
-        """Open subscription plan & key activation modal."""
-        dlg = SubscriptionDialog(self, is_trial_expired=is_expired)
+    def _open_subscription_dialog(self, is_locked: bool = False):
+        """Open subscription plan & single-use key activation modal."""
+        dlg = SubscriptionDialog(self, is_locked_video=is_locked)
         dlg.activated.connect(self._refresh_subscription_ui)
         dlg.exec_()
+        self._refresh_subscription_ui()
 
     def _refresh_subscription_ui(self):
         """Update Pro badges and button states based on subscription status."""
@@ -638,16 +639,16 @@ class ZoomRecorderApp(QMainWindow):
                 "border-radius: 6px; padding: 5px 12px; font-weight: bold; font-size: 11px;"
             )
         else:
-            if subscription_mgr.is_trial_used():
-                self.plan_badge.setText("⏱ TRIAL EXPIRED")
+            if subscription_mgr.is_first_video_free():
+                self.plan_badge.setText("⚡ 1st VIDEO FREE (Any Length)")
                 self.plan_badge.setStyleSheet(
-                    "background-color: #dc2626; color: #ffffff; border-radius: 12px; "
+                    "background-color: #10b981; color: #ffffff; border-radius: 12px; "
                     "padding: 4px 12px; font-size: 11px; font-weight: bold;"
                 )
             else:
-                self.plan_badge.setText("⚡ FREE TRIAL (10s)")
+                self.plan_badge.setText("🔒 1st FREE VIDEO USED")
                 self.plan_badge.setStyleSheet(
-                    "background-color: #f59e0b; color: #121215; border-radius: 12px; "
+                    "background-color: #dc2626; color: #ffffff; border-radius: 12px; "
                     "padding: 4px 12px; font-size: 11px; font-weight: bold;"
                 )
             self.btn_upgrade.setText("💎 Upgrade (1,000 PKR)")
@@ -728,8 +729,12 @@ class ZoomRecorderApp(QMainWindow):
 
     @pyqtSlot(np.ndarray)
     def _update_preview_pixmap(self, frame_bgr: np.ndarray):
-        """Renders live frame on the Center Preview QLabel preserving aspect ratio."""
+        """Renders live frame on Center Preview QLabel with high performance."""
         if frame_bgr is None or frame_bgr.size == 0:
+            return
+
+        # Skip rendering when window is minimized or hidden (zero CPU overhead)
+        if self.isHidden() or self.isMinimized() or not self.isVisible():
             return
 
         h, w, ch = frame_bgr.shape
@@ -744,7 +749,7 @@ class ZoomRecorderApp(QMainWindow):
         pix = QPixmap.fromImage(qimg).scaled(
             avail_w, avail_h,
             Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
+            Qt.FastTransformation
         )
         self.preview_label.setPixmap(pix)
 
@@ -756,16 +761,7 @@ class ZoomRecorderApp(QMainWindow):
             self._start_recording()
 
     def _start_recording(self):
-        # Check subscription or trial
-        if not subscription_mgr.is_subscribed():
-            if subscription_mgr.is_trial_used():
-                self._open_subscription_dialog(is_expired=True)
-                return
-
-        self._trial_limit_hit = False
-        self._recording_elapsed_sec = 0.0
-
-        # Stop idle preview thread
+        # Stop idle preview thread cleanly
         self.idle_preview.stop()
 
         # Parse zoom level
@@ -859,16 +855,7 @@ class ZoomRecorderApp(QMainWindow):
 
     @pyqtSlot(float, int, int)
     def _on_stats_updated(self, elapsed_sec: float, frames: int, file_size: int):
-        self._recording_elapsed_sec = elapsed_sec
-        if not subscription_mgr.is_subscribed():
-            self.timer_label.setText(f"{format_time(elapsed_sec)} / 00:00:10")
-            if elapsed_sec >= FREE_TRIAL_SECONDS and not self._trial_limit_hit:
-                self._trial_limit_hit = True
-                self._stop_recording()
-                return
-        else:
-            self.timer_label.setText(format_time(elapsed_sec))
-
+        self.timer_label.setText(format_time(elapsed_sec))
         self.size_label.setText(format_size(file_size))
 
     @pyqtSlot(str)
@@ -898,19 +885,43 @@ class ZoomRecorderApp(QMainWindow):
         # Restart idle preview
         self.idle_preview.start()
 
-        # Update trial usage if not subscribed
-        if not subscription_mgr.is_subscribed():
-            subscription_mgr.record_trial_usage(self._recording_elapsed_sec)
+        if not saved_path:
+            return
+
+        video_path = Path(saved_path)
+
+        # ----------------- SUBSCRIPTION CHECK ON VIDEO FINISH -----------------
+        if subscription_mgr.is_subscribed():
+            # Pro user: normal save and view
+            self._show_saved_dialog(str(video_path))
+        elif subscription_mgr.is_first_video_free():
+            # 1st Video on this device: 100% FREE!
+            subscription_mgr.record_free_video_completed()
+            self._refresh_subscription_ui()
+            self._show_saved_dialog(str(video_path))
+        else:
+            # 2nd Video onwards on this device:
+            # Video recorded, but DO NOT save unless Pro Plan is activated!
+            dlg = SubscriptionDialog(self, is_locked_video=True)
+            res = dlg.exec_()
             self._refresh_subscription_ui()
 
-        # Show Completion Dialog if video was saved
-        if saved_path:
-            self._show_saved_dialog(saved_path)
-
-        # If 10-second trial was reached, show subscription upgrade dialog
-        if self._trial_limit_hit or (not subscription_mgr.is_subscribed() and subscription_mgr.is_trial_used()):
-            self._trial_limit_hit = False
-            self._open_subscription_dialog(is_expired=True)
+            if res == QDialog.Accepted and subscription_mgr.is_subscribed():
+                # User activated license! Video is unlocked and saved!
+                self._show_saved_dialog(str(video_path))
+            else:
+                # User did not activate license -> video is NOT saved!
+                try:
+                    if video_path.exists():
+                        video_path.unlink()
+                except Exception:
+                    pass
+                QMessageBox.warning(
+                    self,
+                    "Recording Not Saved",
+                    "Aap ka 1st free video trial mukammal ho chuka tha.<br><br>"
+                    "Kyun k 1-Month Pro Plan activate nahi kiya gaya, is liye yeh video save nahi ki gayi."
+                )
 
     def _show_saved_dialog(self, saved_path: str):
         p = Path(saved_path)

@@ -205,9 +205,8 @@ class ScreenRecorder(QThread):
             try:
                 mon = {"left": rx, "top": ry, "width": rw, "height": rh}
                 sct_img = self._sct.grab(mon)
-                # mss returns BGRA array
-                frame = np.array(sct_img, dtype=np.uint8)
-                # Convert BGRA to BGR
+                # Fast direct memory buffer conversion
+                frame = np.frombuffer(sct_img.raw, dtype=np.uint8).reshape((sct_img.height, sct_img.width, 4))
                 return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             except Exception:
                 # Switch to Qt fallback
@@ -267,6 +266,7 @@ class ScreenRecorder(QThread):
         start_time = time.time()
         frames_written = 0
         last_stats_time = start_time
+        last_preview_time = 0.0
         total_paused_time = 0.0
         pause_start = 0.0
 
@@ -305,9 +305,14 @@ class ScreenRecorder(QThread):
                 writer.write(processed_frame)
                 frames_written += 1
 
-                # 4. Emit live preview frame (subsampled or throttled for smooth UI)
-                if frames_written % 2 == 0 or self.fps <= 30:
-                    self.frame_ready.emit(processed_frame)
+                # 4. Emit live preview frame (throttled to ~10 FPS with pre-downscaled thumbnail to avoid GUI hang)
+                if now - last_preview_time >= 0.10:
+                    last_preview_time = now
+                    th_h, th_w = processed_frame.shape[:2]
+                    preview_w = 480
+                    preview_h = int(th_h * (preview_w / float(th_w)))
+                    preview_thumb = cv2.resize(processed_frame, (preview_w, preview_h), interpolation=cv2.INTER_NEAREST)
+                    self.frame_ready.emit(preview_thumb)
 
                 # 5. Periodically emit stats
                 if now - last_stats_time >= 0.5:
